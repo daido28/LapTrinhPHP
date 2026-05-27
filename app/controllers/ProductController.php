@@ -52,6 +52,7 @@ class ProductController
             $description = $_POST['description'] ?? '';
             $price = $_POST['price'] ?? '';
             $category_id = $_POST['category_id'] ?? null;
+            $quantity = $_POST['quantity'] ?? 0;
 
 
             if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
@@ -60,7 +61,14 @@ class ProductController
                 $image = "";
             }
           
-            $result = $this->productModel->addProduct($name, $description, $price, $category_id, $image);
+            $result = $this->productModel->addProduct(
+                $name,
+                $description,
+                $price,
+                $category_id,
+                $image,
+                $quantity
+            );
 
 
             if (is_array($result)) {
@@ -97,6 +105,7 @@ class ProductController
             $description = $_POST['description'];
             $price = $_POST['price'];
             $category_id = $_POST['category_id'];
+            $quantity = $_POST['quantity'];
 
 
             if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
@@ -106,7 +115,15 @@ class ProductController
             }
 
 
-            $edit = $this->productModel->updateProduct($id, $name, $description, $price, $category_id, $image);
+            $edit = $this->productModel->updateProduct(
+                $id,
+                $name,
+                $description,
+                $price,
+                $category_id,
+                $image,
+                $quantity
+            );
 
 
             if ($edit) {
@@ -165,34 +182,166 @@ class ProductController
     }
     
     public function addToCart($id)
-    {
-        $product = $this->productModel->getProductById($id);
-        if (!$product) {
-            echo "Không tìm thấy sản phẩm.";
+{
+    $product = $this->productModel->getProductById($id);
+
+    if (!$product) {
+        echo "Không tìm thấy sản phẩm.";
+        return;
+    }
+
+    // Kiểm tra tồn kho
+    if ($product->quantity <= 0) {
+        echo "Sản phẩm đã hết hàng.";
+        return;
+    }
+
+    if (!isset($_SESSION['cart'])) {
+        $_SESSION['cart'] = [];
+    }
+
+    // Nếu sản phẩm đã có trong giỏ
+    if (isset($_SESSION['cart'][$id])) {
+
+        // Không cho vượt tồn kho
+        if ($_SESSION['cart'][$id]['quantity'] >= $product->quantity) {
+            echo "Đã đạt số lượng tồn kho.";
             return;
         }
 
+        $_SESSION['cart'][$id]['quantity']++;
 
-        if (!isset($_SESSION['cart'])) {
-            $_SESSION['cart'] = [];
-        }
+    } else {
+
+        $_SESSION['cart'][$id] = [
+            'name' => $product->name,
+            'price' => $product->price,
+            'quantity' => 1,
+            'image' => $product->image
+        ];
+    }
+
+    header('Location: /webbanhang/Product/cart');
+}
 
 
-        if (isset($_SESSION['cart'][$id])) {
+    public function cart()
+    {
+        $cart = isset($_SESSION['cart']) ? $_SESSION['cart'] : [];
+        include 'app/views/product/cart.php';
+    }
+
+    public function increase($id)
+{
+    $product = $this->productModel->getProductById($id);
+
+    if (!$product) {
+        return;
+    }
+
+    if (isset($_SESSION['cart'][$id])) {
+
+        // Kiểm tra tồn kho
+        if ($_SESSION['cart'][$id]['quantity'] < $product->quantity) {
+
             $_SESSION['cart'][$id]['quantity']++;
+
         } else {
-            $_SESSION['cart'][$id] = [
-                'name' => $product->name,
-                'price' => $product->price,
-                'quantity' => 1,
-                'image' => $product->image
-            ];
+
+            echo "Số lượng vượt quá tồn kho.";
+            return;
         }
+    }
+
+    header('Location: /webbanhang/Product/cart');
+}
+
+public function decrease($id)
+{
+    if (isset($_SESSION['cart'][$id])) {
+
+        $_SESSION['cart'][$id]['quantity']--;
+
+        if ($_SESSION['cart'][$id]['quantity'] <= 0) {
+            unset($_SESSION['cart'][$id]);
+        }
+    }
+
+    header('Location: /webbanhang/Product/cart');
+}
 
 
-        header('Location: /webbanhang/Product/cart');
+    public function checkout()
+    {
+        include 'app/views/product/checkout.php';
     }
 
 
+    public function processCheckout()
+    {
+        if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+            $name = $_POST['name'];
+            $phone = $_POST['phone'];
+            $address = $_POST['address'];
+
+
+            // Kiểm tra giỏ hàng
+            if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
+                echo "Giỏ hàng trống.";
+                return;
+            }
+
+
+            // Bắt đầu giao dịch
+            $this->db->beginTransaction();
+
+
+            try {
+                // Lưu thông tin đơn hàng vào bảng orders
+                $query = "INSERT INTO orders (name, phone, address) VALUES (:name, :phone, :address)";
+                $stmt = $this->db->prepare($query);
+                $stmt->bindParam(':name', $name);
+                $stmt->bindParam(':phone', $phone);
+                $stmt->bindParam(':address', $address);
+                $stmt->execute();
+                $order_id = $this->db->lastInsertId();
+
+
+                // Lưu chi tiết đơn hàng vào bảng order_details
+                $cart = $_SESSION['cart'];
+                foreach ($cart as $product_id => $item) {
+                    $query = "INSERT INTO order_details (order_id, product_id, quantity, price) VALUES (:order_id, :product_id, :quantity, :price)";
+                    $stmt = $this->db->prepare($query);
+                    $stmt->bindParam(':order_id', $order_id);
+                    $stmt->bindParam(':product_id', $product_id);
+                    $stmt->bindParam(':quantity', $item['quantity']);
+                    $stmt->bindParam(':price', $item['price']);
+                    $stmt->execute();
+                }
+
+
+                // Xóa giỏ hàng sau khi đặt hàng thành công
+                unset($_SESSION['cart']);
+
+
+                // Commit giao dịch
+                $this->db->commit();
+
+
+                // Chuyển hướng đến trang xác nhận đơn hàng
+                header('Location: /webbanhang/Product/orderConfirmation');
+            } catch (Exception $e) {
+                // Rollback giao dịch nếu có lỗi
+                $this->db->rollBack();
+                echo "Đã xảy ra lỗi khi xử lý đơn hàng: " . $e->getMessage();
+            }
+        }
+    }
+
+
+    public function orderConfirmation()
+    {
+        include 'app/views/product/orderConfirmation.php';
+    }
 }
 ?>

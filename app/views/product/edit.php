@@ -60,6 +60,16 @@
                 </div>
 
                 <div class="mb-3">
+                    <label class="form-label">Số lượng</label>
+                    <input type="number"
+                            name="quantity"
+                            class="form-control"
+                            min="0"
+                            value="<?php echo $product->quantity; ?>"
+                            required>
+                </div>
+
+                <div class="mb-3">
                     <label class="form-label">Danh mục</label>
 
                     <select name="category_id"

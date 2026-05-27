@@ -13,9 +13,11 @@ class ProductModel
 
     public function getProducts()
     {
-        $query = "SELECT p.id, p.name, p.description, p.price, p.image, c.name as category_name
-                  FROM " . $this->table_name . " p
-                  LEFT JOIN category c ON p.category_id = c.id";
+        $query = "SELECT p.id, p.name, p.description, p.price, 
+          p.image, p.quantity,
+          c.name as category_name
+          FROM " . $this->table_name . " p
+          LEFT JOIN category c ON p.category_id = c.id";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         $result = $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -34,7 +36,7 @@ class ProductModel
     }
 
 
-    public function addProduct($name, $description, $price, $category_id, $image)
+    public function addProduct($name, $description, $price, $category_id, $image, $quantity)
     {
         $errors = [];
         if (empty($name)) {
@@ -49,9 +51,14 @@ class ProductModel
         if (count($errors) > 0) {
             return $errors;
         }
+        if (!is_numeric($quantity) || $quantity < 0) {
+            $errors['quantity'] = 'Số lượng không hợp lệ';
+        }
 
 
-        $query = "INSERT INTO " . $this->table_name . " (name, description, price, category_id, image) VALUES (:name, :description, :price, :category_id, :image)";
+        $query = "INSERT INTO " . $this->table_name . " 
+(name, description, price, category_id, image, quantity) 
+VALUES (:name, :description, :price, :category_id, :image, :quantity)";
         $stmt = $this->conn->prepare($query);
 
 
@@ -67,6 +74,7 @@ class ProductModel
         $stmt->bindParam(':price', $price);
         $stmt->bindParam(':category_id', $category_id);
         $stmt->bindParam(':image', $image);
+        $stmt->bindParam(':quantity', $quantity);
 
 
         if ($stmt->execute()) {
@@ -78,9 +86,16 @@ class ProductModel
     }
 
 
-    public function updateProduct($id, $name, $description, $price, $category_id, $image)
+    public function updateProduct($id, $name, $description, $price, $category_id, $image, $quantity)
     {
-        $query = "UPDATE " . $this->table_name . " SET name=:name, description=:description, price=:price, category_id=:category_id, image=:image WHERE id=:id";
+        $query = "UPDATE " . $this->table_name . " 
+SET name=:name,
+description=:description,
+price=:price,
+category_id=:category_id,
+image=:image,
+quantity=:quantity
+WHERE id=:id";
         $stmt = $this->conn->prepare($query);
 
 
@@ -97,6 +112,7 @@ class ProductModel
         $stmt->bindParam(':price', $price);
         $stmt->bindParam(':category_id', $category_id);
         $stmt->bindParam(':image', $image);
+        $stmt->bindParam(':quantity', $quantity);
 
 
         if ($stmt->execute()) {
@@ -105,6 +121,19 @@ class ProductModel
         return false;
     }
 
+    public function updateQuantity($id, $quantity)
+{
+    $query = "UPDATE " . $this->table_name . "
+              SET quantity = :quantity
+              WHERE id = :id";
+
+    $stmt = $this->conn->prepare($query);
+
+    $stmt->bindParam(':id', $id);
+    $stmt->bindParam(':quantity', $quantity);
+
+    return $stmt->execute();
+}
 
     public function deleteProduct($id)
     {
